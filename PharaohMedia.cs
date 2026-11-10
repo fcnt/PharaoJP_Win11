@@ -8,6 +8,9 @@ public static class PharaohMedia
 {
     private const int RawSector = 2352, Sector = 2048;
     private const int SectorCount = 255442;
+    private const int MenuMusicSector = 72688, MenuMusicSize = 2357874;
+    private const string MenuMusicHash = "AD7C0BD52281C92B492302F62CCC96D8FFB4D7A2BF5882A3C3DEFFD1BDA4A259";
+    private static readonly string MenuMusicPath = Path.Combine("Audio", "Music", "setup.mp3");
 
     public static void Install(string image, string destination)
     {
@@ -57,8 +60,54 @@ public static class PharaohMedia
                     throw new InvalidDataException("This disc does not match the supported Japanese 1.0 release.");
             }
             Expand(hdr, cab, destination);
+            if (!WriteMenuMusic(DiscRead(disc, MenuMusicSector, MenuMusicSize), Path.Combine(destination, MenuMusicPath)))
+                throw new InvalidDataException("The CD's menu music did not pass verification.");
         }
         Directory.CreateDirectory(Path.Combine(destination, "Save"));
+    }
+
+    public static bool TryRestoreMenuMusic(string destination)
+    {
+        string target = Path.Combine(destination, MenuMusicPath);
+        if (File.Exists(target)) return true;
+
+        string iso = Path.Combine(destination, "Pharaoh.iso");
+        if (File.Exists(iso))
+        {
+            using (var disc = File.OpenRead(iso))
+            {
+                if (disc.Length == (long)SectorCount * Sector &&
+                    WriteMenuMusic(DiscRead(disc, MenuMusicSector, MenuMusicSize), target))
+                    return true;
+            }
+        }
+
+        foreach (DriveInfo drive in DriveInfo.GetDrives())
+        {
+            if (drive.DriveType != DriveType.CDRom || !drive.IsReady) continue;
+            var source = new FileInfo(Path.Combine(drive.RootDirectory.FullName, MenuMusicPath));
+            if (source.Exists && source.Length == MenuMusicSize && WriteMenuMusic(File.ReadAllBytes(source.FullName), target))
+                return true;
+        }
+        return false;
+    }
+
+    private static bool WriteMenuMusic(byte[] music, string target)
+    {
+        using (var sha = SHA256.Create())
+        {
+            if (Hex(sha.ComputeHash(music)) != MenuMusicHash) return false;
+        }
+        Directory.CreateDirectory(Path.GetDirectoryName(target));
+        string temporary = target + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            File.WriteAllBytes(temporary, music);
+            try { File.Move(temporary, target); }
+            catch (IOException) { if (!File.Exists(target)) throw; }
+        }
+        finally { File.Delete(temporary); }
+        return true;
     }
 
     private static byte[] DiscRead(Stream disc, int sector, int size)

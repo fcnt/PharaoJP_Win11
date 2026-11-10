@@ -97,6 +97,12 @@ try {
             throw 'ファラオを終了してから実行してください。'
         }
         Update-Game $root $true
+        Add-Type -Path (Join-Path $PSScriptRoot 'PharaohMedia.cs')
+        if ([PharaohMedia]::TryRestoreMenuMusic($root)) {
+            Write-Host 'タイトル・メニューBGM  Audio\Music\setup.mp3'
+        } else {
+            Write-Warning 'BGMをコピーするには、元のCDイメージをマウントして Patch-existing.cmd をもう一度実行してください。'
+        }
         Write-Host "パッチ適用先  $root"
         return
     }
